@@ -9,46 +9,81 @@
 using namespace std;
 using namespace cv;
 
-vector< vector< Point3f > > object_points;
-vector< vector< Point2f > > image_points;
-vector< Point2f > corners;
-vector< vector< Point2f > > left_img_points;
+vector< vector< Point3f > > l_object_points;
+vector< vector< Point2f > > l_img_points;
+vector< vector< Point3f > > r_object_points;
+vector< vector< Point2f > > r_img_points;
 
-Mat img, gray;
+Mat imgL, grayL;
+Mat imgR, grayR;
 Size im_size;
 
-void setup_calibration(int board_width, int board_height, int num_imgs, 
-                       float square_size, char* imgs_directory, char* imgs_filename,
-                       char* extension) {
+void setup_calibration(int board_width, int board_height,
+                       float square_size, VideoCapture *capture, bool show_output = false) {
   Size board_size = Size(board_width, board_height);
   int board_n = board_width * board_height;
+  Mat frame;
+  int k = 0;
+  vector< Point2f > corners;
 
-  for (int k = 1; k <= num_imgs; k++) {
-    char img_file[100];
-    sprintf(img_file, "%s%s%d.%s", imgs_directory, imgs_filename, k, extension);
-    img = imread(img_file, CV_LOAD_IMAGE_COLOR);
-    cv::cvtColor(img, gray, CV_BGR2GRAY);
+  vector< Point3f > obj;
+  for (int i = 0; i < board_height; i++)
+    for (int j = 0; j < board_width; j++)
+      obj.push_back(Point3f((float)j * square_size, (float)i * square_size, 0));
+
+  while (capture->read(frame)) {
+    if ( im_size == Size() ) {
+      im_size = frame.size();
+      im_size.width /= 2;
+    }
+
+    int cy = im_size.height;
+    int cx = im_size.width;
+
+    imgL = frame(Rect(0, 0, cx, cy));
+    imgR = frame(Rect(cx, 0, cx, cy));
+
+    cv::cvtColor(imgL, grayL, CV_BGR2GRAY);
+    cv::cvtColor(imgR, grayR, CV_BGR2GRAY);
 
     bool found = false;
-    found = cv::findChessboardCorners(img, board_size, corners,
+
+    found = cv::findChessboardCorners(grayR, board_size, corners,
                                       CV_CALIB_CB_ADAPTIVE_THRESH | CV_CALIB_CB_FILTER_QUADS);
     if (found)
     {
-      cornerSubPix(gray, corners, cv::Size(5, 5), cv::Size(-1, -1),
+      cornerSubPix(grayR, corners, cv::Size(5, 5), cv::Size(-1, -1),
                    TermCriteria(CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, 30, 0.1));
-      drawChessboardCorners(gray, board_size, corners, found);
+      if (show_output) {
+        drawChessboardCorners(imgR, board_size, corners, found);
+        imshow("cornersR", imgR);
+        char c = (char)waitKey(500);
+        if( c == 27 || c == 'q' || c == 'Q' ) //Allow ESC to quit
+          exit(-1);
+      }
+      cout << k << ". Found " << corners.size() << " right corners" << endl;
+      r_img_points.push_back(corners);
+      r_object_points.push_back(obj);
     }
-    
-    vector< Point3f > obj;
-    for (int i = 0; i < board_height; i++)
-      for (int j = 0; j < board_width; j++)
-        obj.push_back(Point3f((float)j * square_size, (float)i * square_size, 0));
 
-    if (found) {
-      cout << k << ". Found corners!" << endl;
-      image_points.push_back(corners);
-      object_points.push_back(obj);
+    found = cv::findChessboardCorners(grayL, board_size, corners,
+                                      CV_CALIB_CB_ADAPTIVE_THRESH | CV_CALIB_CB_FILTER_QUADS);
+    if (found)
+    {
+      cornerSubPix(grayL, corners, cv::Size(5, 5), cv::Size(-1, -1),
+                   TermCriteria(CV_TERMCRIT_EPS | CV_TERMCRIT_ITER, 30, 0.1));
+      if (show_output) {
+        drawChessboardCorners(imgL, board_size, corners, found);
+        imshow("cornersL", imgL);
+        char c = (char)waitKey(500);
+        if( c == 27 || c == 'q' || c == 'Q' ) //Allow ESC to quit
+          exit(-1);
+      }
+      cout << k << ". Found " << corners.size() << " left corners" << endl;
+      l_img_points.push_back(corners);
+      l_object_points.push_back(obj);
     }
+    k++;
   }
 }
 
@@ -76,21 +111,18 @@ double computeReprojectionErrors(const vector< vector< Point3f > >& objectPoints
 
 int main(int argc, char const **argv)
 {
-  int board_width, board_height, num_imgs;
-  float square_size;
-  char* imgs_directory;
-  char* imgs_filename;
-  char* out_file;
-  char* extension;
+  int board_width = 8, board_height = 6;
+  int show_images = 0;
+  float square_size = 1.0;
+  char* videoFilename = NULL;
+  const char* out_file = "intrinsics.yml";
 
   static struct poptOption options[] = {
+    { "show_images",'i',POPT_ARG_NONE,&show_images,0,"Display found checkerboard corners", NULL },
     { "board_width",'w',POPT_ARG_INT,&board_width,0,"Checkerboard width","NUM" },
     { "board_height",'h',POPT_ARG_INT,&board_height,0,"Checkerboard height","NUM" },
-    { "num_imgs",'n',POPT_ARG_INT,&num_imgs,0,"Number of checkerboard images","NUM" },
     { "square_size",'s',POPT_ARG_FLOAT,&square_size,0,"Size of checkerboard square","NUM" },
-    { "imgs_directory",'d',POPT_ARG_STRING,&imgs_directory,0,"Directory containing images","STR" },
-    { "imgs_filename",'i',POPT_ARG_STRING,&imgs_filename,0,"Image filename","STR" },
-    { "extension",'e',POPT_ARG_STRING,&extension,0,"Image extension","STR" },
+    { "video_filename",'v',POPT_ARG_STRING,&videoFilename,0,"Video file to read", "STR" },
     { "out_file",'o',POPT_ARG_STRING,&out_file,0,"Output calibration filename (YML)","STR" },
     POPT_AUTOHELP
     { NULL, 0, 0, NULL, 0, NULL, NULL }
@@ -100,23 +132,40 @@ int main(int argc, char const **argv)
   int c;
   while((c = popt.getNextOpt()) >= 0) {}
 
-  setup_calibration(board_width, board_height, num_imgs, square_size,
-                   imgs_directory, imgs_filename, extension);
+  if (!videoFilename) {
+      cerr << "Please supply a video file name" << endl;
+      exit(EXIT_FAILURE);
+  }
 
-  printf("Starting Calibration\n");
-  Mat K;
-  Mat D;
+  VideoCapture capture(videoFilename);
+  if(!capture.isOpened()){
+     //error in opening the video input
+      cerr << "Unable to open video file: " << videoFilename << endl;
+      exit(EXIT_FAILURE);
+  }
+
+  setup_calibration(board_width, board_height, square_size, &capture, show_images);
+
+  printf("Starting Calibration with %d left and %d right images\n", l_img_points.size(), r_img_points.size());
+  Mat K_l, K_r;
+  Mat D_l, D_r;
+
   vector< Mat > rvecs, tvecs;
-  int flag = 0;
-  flag |= CV_CALIB_FIX_K4;
-  flag |= CV_CALIB_FIX_K5;
-  calibrateCamera(object_points, image_points, img.size(), K, D, rvecs, tvecs, flag);
+  int flag = CV_CALIB_FIX_K4 | CV_CALIB_FIX_K5;
 
-  cout << "Calibration error: " << computeReprojectionErrors(object_points, image_points, rvecs, tvecs, K, D) << endl;
+  calibrateCamera(r_object_points, r_img_points, im_size, K_r, D_r, rvecs, tvecs, flag);
+  cout << "Right Calibration error: " << computeReprojectionErrors(r_object_points, r_img_points, rvecs, tvecs, K_r, D_r) << endl;
+
+  calibrateCamera(l_object_points, l_img_points, im_size, K_l, D_l, rvecs, tvecs, flag);
+
+  cout << "Left Calibration error: " << computeReprojectionErrors(l_object_points, l_img_points, rvecs, tvecs, K_l, D_l) << endl;
+
 
   FileStorage fs(out_file, FileStorage::WRITE);
-  fs << "K" << K;
-  fs << "D" << D;
+  fs << "K1" << K_l;
+  fs << "D1" << D_l;
+  fs << "K2" << K_r;
+  fs << "D2" << D_r;
   fs << "board_width" << board_width;
   fs << "board_height" << board_height;
   fs << "square_size" << square_size;
