@@ -13,6 +13,10 @@ static void saveXYZ(const char* filename, const Mat& mat, const Mat& img, const 
 {
     const double max_z = 1.0e4;
     FILE* fp = fopen(filename, "wt");
+    if (!fp) {
+      printf ("Failed to open output file %s\n", filename);
+      return;
+    }
     for(int y = 0; y < mat.rows; y++)
     {
         for(int x = 0; x < mat.cols; x++)
@@ -44,7 +48,8 @@ reproject_and_save (cv::Mat &disparity, cv::Mat &in_img, cv::Mat &mask, cv::Mat 
   cv::Mat_<cv::Vec3f> XYZ(disparityF.rows,disparityF.cols);   // Output point cloud
 
   Q.convertTo( QF, CV_32F, 1.);
-  QF.at<float>(3,3)=-QF.at<float>(3,3);
+  float scale = -QF.at<float>(3,3);
+  QF.at<float>(3,3)=scale;
 
 #if 1
   cv::Mat_<float> vec_tmp(4,1);
@@ -56,7 +61,7 @@ reproject_and_save (cv::Mat &disparity, cv::Mat &in_img, cv::Mat &mask, cv::Mat 
           cv::Vec3f &point = XYZ.at<cv::Vec3f>(y,x);
           point[0] = vec_tmp(0);
           point[1] = vec_tmp(1);
-          point[2] = vec_tmp(2);
+          point[2] = vec_tmp(2) * scale;
       }
   }
 #else
@@ -72,12 +77,14 @@ int main(int argc, char const *argv[])
   const char* out_filename = NULL;
   const char* calib_file = "extrinsics.yml";
   const char* point_cloud_filename = NULL;
+  int show_results = 0;
 
   static struct poptOption options[] = {
     { "in_filename",'i',POPT_ARG_STRING,&img_filename,0,"input image path","STR" },
     { "out_filename",'o',POPT_ARG_STRING,&out_filename,0,"out image path","STR" },
     { "calib_file",'c',POPT_ARG_STRING,&calib_file,0,"Stereo calibration file","STR" },
     { "point_cloud",'p',POPT_ARG_STRING,&point_cloud_filename,0,"Write point cloud","STR" },
+    { "show-results",'s',POPT_ARG_NONE,&show_results,0,"Display resulting image and depth map",NULL },
     POPT_AUTOHELP
     { NULL, 0, 0, NULL, 0, NULL, NULL }
   };
@@ -103,6 +110,10 @@ int main(int argc, char const *argv[])
   Mat img2 = img(Rect(cx, 0, cx, cy));
 
   cv::FileStorage fs1(calib_file, cv::FileStorage::READ);
+  if (!fs1.isOpened()) {
+      printf ("Could not open stereo calibration file %s\n", calib_file);
+      exit(1);
+  }
   fs1["K1"] >> K1;
   fs1["K2"] >> K2;
   fs1["D1"] >> D1;
@@ -169,12 +180,14 @@ int main(int argc, char const *argv[])
     printf("\n");
   }
 
-  imshow("left", imgU1);
-  imshow("right", imgU2);
-  imshow("disparity", disparity_eq);
-  c = (char)waitKey(50000);
-  if( c == 27 || c == 'q' || c == 'Q' ) //Allow ESC to quit
-    exit(-1);
+  if (show_results) {
+    imshow("left", imgU1);
+    imshow("right", imgU2);
+    imshow("disparity", disparity_eq);
+    c = (char)waitKey(50000);
+    if( c == 27 || c == 'q' || c == 'Q' ) //Allow ESC to quit
+      exit(-1);
+  }
 
   return 0;
 }

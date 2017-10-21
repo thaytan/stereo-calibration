@@ -127,7 +127,7 @@ int main(int argc, char const *argv[])
   fsl["K2"] >> K2;
   fsl["D1"] >> D1;
   fsl["D2"] >> D2;
-  int flag = CV_CALIB_FIX_INTRINSIC | CALIB_SAME_FOCAL_LENGTH;
+  int flag = CV_CALIB_FIX_INTRINSIC;// | CALIB_SAME_FOCAL_LENGTH;
   
   cout << "Read intrinsics" << endl;
   
