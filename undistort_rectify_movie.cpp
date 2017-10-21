@@ -27,11 +27,6 @@ int main(int argc, char const *argv[])
   int c;
   while((c = popt.getNextOpt()) >= 0) {}
 
-  if (vid_filename == NULL || out_filename == NULL) {
-    cerr << "Please supply input and output file names" << endl;
-    exit (1);
-  }
-
   if (!vid_filename) {
       cerr << "Please supply a video file name" << endl;
       exit(EXIT_FAILURE);
@@ -70,18 +65,18 @@ int main(int argc, char const *argv[])
   cv::Mat lmapx, lmapy, rmapx, rmapy;
   cv::Mat imgU1, imgU2;
 
-  int window_size = 7;
-  int min_disp = -20;
-  int numberOfDisparities = ((cx/8) + 15) & -16;
+  int window_size = 9;
+  int min_disp = 0; // -20;
+  int numberOfDisparities = 128; // ((cx/8) + 15) & -16;
   
 #if 1
   cv::Ptr<cv::StereoSGBM> stereo = cv::StereoSGBM::create (min_disp, numberOfDisparities, window_size,
         /* P1 */ 8*3*window_size * window_size,
         /* P2 */ 32*3*window_size * window_size,
-        /* disp12MaxDiff = */ 1,
-        /* prefilterCaps */ 0,
+        /* disp12MaxDiff = */ 2,
+        /* prefilterCaps */ 5,
         /*uniquenessRatio = */ 2, // 10,
-        /*speckleWindowSize = */ 50, // 100,
+        /*speckleWindowSize = */ 75, // 100,
         /*speckleRange = */ 2, // 32
         StereoSGBM::MODE_HH
     );
@@ -90,7 +85,10 @@ int main(int argc, char const *argv[])
         7, 100, 1000, 32, 0, 15, 50, 16, StereoSGBM::MODE_SGBM_3WAY);
 #endif
 
+  int i = 0;
   while (capture.read(frame)) {
+    if (i++ % 4 != 0)
+      continue;
     if ( im_size == Size() ) {
       im_size = frame.size();
       im_size.width /= 2;
@@ -116,7 +114,8 @@ int main(int argc, char const *argv[])
 
     disparity.convertTo(disparity_eq, CV_8U, 255/(numberOfDisparities*16.));
 
-    imwrite(string("disparity") + out_filename, disparity_eq);
+    if (out_filename)
+      imwrite(string("disparity") + out_filename, disparity_eq);
 
     imshow("left", imgU1);
     imshow("right", imgU2);
