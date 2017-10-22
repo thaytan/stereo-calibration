@@ -2,6 +2,8 @@
 
 This repository contains some sources to calibrate the intrinsics of individual cameras and also the extrinsics of a stereo pair.
 
+My version is modified from upstream to work on a camera that provides a side-by-side stereo pair in a single frame.
+
 ### Dependencies
 
 - OpenCV
